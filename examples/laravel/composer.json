@@ -31,7 +31,7 @@
         ],
         "dev": [
             "Composer\\Config::disableProcessTimeout",
-            "@php artisan serve --host=127.0.0.1 --port=3002"
+            "@php artisan serve --no-reload --host=127.0.0.1 --port=3002"
         ],
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",

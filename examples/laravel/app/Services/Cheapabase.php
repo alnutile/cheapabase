@@ -55,7 +55,19 @@ class Cheapabase
 
     public function user(): ?array
     {
-        return $this->accessToken() ? ['email' => session(self::SESSION_KEY.'.email')] : null;
+        if (! $token = $this->accessToken()) {
+            return null;
+        }
+        // Sessions created by the original example only stored email.
+        if (! session(self::SESSION_KEY.'.user_id')) {
+            $user = $this->auth()->withToken($token)->get('/user')->throw()->json();
+            session()->put(self::SESSION_KEY.'.user_id', $user['id']);
+        }
+
+        return [
+            'id' => session(self::SESSION_KEY.'.user_id'),
+            'email' => session(self::SESSION_KEY.'.email'),
+        ];
     }
 
     /** The user's access token, refreshed first if it has (nearly) expired. Null when signed out. */
@@ -130,6 +142,7 @@ class Cheapabase
             'refresh_token' => $response->json('refresh_token'),
             'expires_at' => $response->json('expires_at') ?? time() + $response->json('expires_in', 3600),
             'email' => $response->json('user.email'),
+            'user_id' => $response->json('user.id'),
         ]);
 
         return $response->json('access_token');

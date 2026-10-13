@@ -8,6 +8,8 @@
       <button id="signout" type="submit" class="secondary">Sign out</button>
     </form>
   </header>
+  <p class="muted">Laravel + Blade · Auth, Postgres, and realtime through cheapabase</p>
+  <p id="me-email">{{ $user['email'] }}</p>
 
   {{-- The message comes from the "hello" function, called with this user's token. --}}
   <p id="hello">{{ $hello }}</p>
@@ -18,11 +20,14 @@
     <button id="create-doc" type="submit">Create</button>
   </form>
 
-  <ul>
+  <ul id="doc-list">
     @forelse ($docs as $doc)
       <li><a class="doc-link" href="{{ route('docs.show', $doc['id']) }}">{{ $doc['title'] }}</a></li>
     @empty
       <li class="muted">No docs yet.</li>
     @endforelse
   </ul>
+  <p id="realtime-status" class="muted" role="status"></p>
+  <script type="application/json" id="collaboration-config">{!! json_encode(['url' => $cheapabaseUrl, 'user' => $user], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>
+  <script type="module" src="/collaboration.js"></script>
 @endsection

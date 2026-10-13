@@ -15,6 +15,9 @@ class SignedIn
     public function handle(Request $request, Closure $next): Response
     {
         if (! $this->cheapabase->accessToken()) {
+            if ($request->expectsJson()) {
+                return response()->json(['message' => 'Please sign in again.'], 401);
+            }
             return redirect('/');
         }
 

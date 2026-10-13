@@ -1,15 +1,34 @@
 # cheapabase
 
-The parts of Supabase you actually use, in **two containers** and about **100MB of RAM**.
-A small app runs on Railway's **$5/month** Hobby plan ([cost breakdown](docs/cost.md)).
+**A Supabase-style backend you can start with one command.**
+
+Postgres, authentication, a generated REST API, realtime events, and server functions
+in **two containers**. Clone the repo, start Docker Compose, and open a working app.
+No local runtime installation, separate frontend build, or dashboard setup required.
+
+cheapabase uses **Supabase Auth (GoTrue)** and **PostgREST**, adds a small Bun gateway,
+and ships a collaborative docs app so you can see the pieces working together immediately.
+Use it for a prototype, a side project, a learning lab, or a small app you want to host yourself.
 
 - **Postgres** with **RLS**, the same `anon` / `authenticated` / `service_role` roles and `auth.uid()`
 - **Auth** with JWTs (Supabase's own auth server, GoTrue): email + password out of the box, OAuth and SMTP via env vars
 - **REST API** generated from your schema (PostgREST)
 - **Realtime**: row changes filtered by RLS, plus broadcast and presence channels
 - **Functions**: drop a file in `functions/`, call it at `/functions/v1/<name>`
-- **supabase-js works unchanged** for auth, database and functions. So does the Python `supabase` client
+- **Familiar Supabase clients** for auth, database and functions, demonstrated with supabase-js and the Python `supabase` client. Realtime uses the included `realtime.js` client
 - **Works with any framework.** The same example app is built in [vanilla JS](examples/vanilla), [Next.js](examples/nextjs), [Laravel](examples/laravel), [FastAPI](examples/fastapi) and [Rails](examples/rails), and CI tests every one of them
+
+### Why try it?
+
+- **Get to the app quickly.** One Compose command starts the backend, database, and demo frontend.
+- **Keep the permissions in Postgres.** Row-level security controls both API reads and realtime row delivery.
+- **Use familiar tools.** SQL migrations, Supabase client calls, plain TypeScript functions, and your choice of frontend.
+- **Carry it to a host.** The same Dockerfile runs locally and on Railway; the app needs a Postgres connection and a JWT secret.
+- **Understand what you're running.** One gateway starts Auth and PostgREST; Postgres is the only other service.
+
+This is a focused implementation of common Supabase workflows, not full Supabase feature parity.
+There is no Studio dashboard or Storage API, realtime has its own protocol, and functions run in Bun.
+See [Limits](#limits) for the tradeoffs.
 
 ```
                        one container (Bun, ~40MB RAM idle)
@@ -24,6 +43,7 @@ A small app runs on Railway's **$5/month** Hobby plan ([cost breakdown](docs/cos
 ```
 
 **Contents:** [Quickstart](#quickstart-5-minutes) ·
+[Two-user demo](#try-the-two-user-demo-bob-and-alice) ·
 [Examples](#examples-same-app-five-frameworks) ·
 [Deploy to Railway](#deploy-to-railway) ·
 [Cost](#cost) ·
@@ -37,26 +57,26 @@ A small app runs on Railway's **$5/month** Hobby plan ([cost breakdown](docs/cos
 ## Quickstart (5 minutes)
 
 You need [Docker](https://docs.docker.com/get-docker/) with Compose. That's all.
+Use Docker Desktop on macOS (Apple Silicon or Intel), or Docker Engine with the
+Compose plugin on Linux (ARM64 or x86-64). Docker selects the matching architecture;
+no local Bun, Auth, or PostgREST installation is needed. The same Dockerfile is used
+for hosted deployments.
 
 ```bash
 git clone https://github.com/alnutile/cheapabase.git
 cd cheapabase
-docker compose up --build
+docker compose up -d --build --wait
 ```
 
-Wait for this line in the logs (first boot takes a minute while images download):
+Compose returns once both services are healthy. First boot takes longer while images
+download and the database initializes. To follow startup logs:
 
 ```
-app-1  | [cheapabase] ready on :8000
+docker compose logs -f app
 ```
 
-Then open **http://localhost:8000**:
-
-1. Click **Need an account? Sign up**, use any email (e.g. `ada@example.com`) and a password of 6+ characters. No email confirmation needed locally.
-2. Click **+ New doc** and type.
-3. Open a **private window**, sign up as someone else (e.g. `bob@example.com`).
-4. Back in the first window click **Share** and enter `bob@example.com`. The doc appears in Bob's sidebar right away.
-5. Open the doc in both windows and type. You'll see the other person's avatar, "is typing" and their edits live.
+Then open **http://localhost:8000**. The docs app is ready for signup, private documents,
+sharing, and live updates. Follow the [two-user demo](#try-the-two-user-demo-bob-and-alice) below.
 
 Check the API directly:
 
@@ -65,7 +85,49 @@ curl http://localhost:8000/health        # {"ok":true,...}
 curl http://localhost:8000/config.json   # {"url":"...","anonKey":"eyJ..."}
 ```
 
-Stop with `Ctrl+C`. Start fresh (deletes the database) with `docker compose down -v`.
+Stop with `docker compose down`; your database stays in its Docker volume. Start again
+with `docker compose up -d --wait`. `Ctrl+C` stops following logs without stopping the stack.
+For a complete reset, `docker compose down -v` **deletes the local database and accounts**.
+
+## Try the two-user demo: Bob and Alice
+
+Open Chrome and a Chrome Incognito window side by side, both at **http://localhost:8000**.
+The two windows have separate login sessions. Two normal tabs in the same browser profile
+share the app's login state and won't give you the same demonstration.
+
+1. **Sign up as Bob in Chrome.** Click **Need an account? Sign up**, enter `bob@example.com`
+   and a password of at least six characters. Local signups are auto-confirmed.
+2. **Create a private document.** Click **+ New doc**, give it a title, and type a few lines.
+   Wait for **Saved**.
+3. **Sign up as Alice in Incognito.** Use `alice@example.com`. Her sidebar is empty:
+   signing in doesn't grant access to Bob's document.
+4. **Share from Bob's window.** Click **Share** and enter Alice's exact account email.
+   Alice must already have an account. The document appears in her sidebar without a refresh.
+5. **Open it as Alice.** Both windows show presence avatars. Type as Bob and watch Alice's
+   window display the typing indicator and saved text updates. Then pause and let Alice edit;
+   Bob sees her changes too.
+6. **Show persistence.** Refresh Alice's window: her session and shared document remain.
+7. **Optional: show a live delete.** Delete the document as Bob. It disappears from Alice's
+   sidebar and her editor closes. Only the owner can share or delete; members can edit.
+
+Use fresh email addresses if you've already run the demo, or sign in to the existing accounts.
+Close all Incognito windows after a rehearsal to clear that session.
+
+### What this demonstrates
+
+| What you see | What powers it |
+|---|---|
+| Two independent signups and sessions | Supabase Auth (GoTrue), called through supabase-js |
+| Bob's document stays private until shared | Postgres row-level security |
+| Bob shares with an existing account | A Bun function that checks ownership and adds membership |
+| The shared document appears without refresh | Realtime notification of Alice's new membership |
+| Saved edits arrive in the other window | Postgres row changes, re-read under the subscriber's RLS permissions |
+| Avatars and typing indicators | Presence and broadcast on an access-controlled document channel |
+| The document survives a refresh | Persistent Postgres data |
+
+The example saves whole documents and uses **last-write-wins**, not character-level conflict
+merging. Take turns typing for this demo. A Google Docs-style editor with simultaneous edits
+would need a conflict-resolution layer such as a CRDT.
 
 ## Examples: same app, five frameworks
 
@@ -85,12 +147,18 @@ Start the stack with `docker compose up`, then follow the README in the example'
 read `CHEAPABASE_URL` (default `http://localhost:8000`). See [examples/README.md](examples/README.md)
 for the shared contract and how to add your own.
 
+**Want to demonstrate this in Laravel?** The [Laravel + Blade example](examples/laravel/README.md)
+includes Bob/Alice sharing, autosave, live document lists, presence, typing indicators, and
+live deletes. Laravel handles sessions and writes; cheapabase handles Auth, Postgres, and
+WebSockets. This flow needs no Echo, Reverb, Pusher account, queue worker, or frontend build.
+Open it on port **3002** after following its setup instructions.
+
 The default frontend is set by `STATIC_DIR` (default `examples/vanilla`). Set `STATIC_DIR=` (empty)
 to run cheapabase as a pure API for a frontend hosted elsewhere.
 
 ## Deploy to Railway
 
-You need a [Railway](https://railway.com) account (the trial includes $5 of credit) and this repo on
+You need a [Railway](https://railway.com) account and this repo on
 your GitHub account (fork it, or push your copy).
 
 1. **Create the project.** Railway dashboard → **New Project** → **Deploy from GitHub repo** → pick your cheapabase repo.
@@ -111,11 +179,23 @@ your GitHub account (fork it, or push your copy).
 
 On every boot cheapabase creates its roles, lets the auth server migrate, applies any new
 `db/migrations/*.sql` and starts serving. Railway's healthcheck (`/health`) only passes once all of
-that is done, so a bad migration never replaces a working deploy.
+that is done. A startup or migration failure leaves the new deployment unhealthy.
 
 **Custom domain:** add it under Networking, then set `PUBLIC_URL=https://your.domain` so auth links
 point at it. **Connect with psql:** Postgres service → **Connect** → copy the public URL.
 **Back up your `JWT_SECRET`:** changing it logs everyone out and changes the anon key.
+
+### Host it elsewhere
+
+Build this Dockerfile on an ARM64 or x86-64 Linux host, connect the app to Postgres,
+and provide `DATABASE_URL`, a private random `JWT_SECRET`, and `PUBLIC_URL` set to
+your public HTTPS address. Route traffic to the app's `PORT` (default `8000`).
+The database user must be able to create roles and schemas during bootstrap.
+
+For a public app, configure SMTP and email confirmation, keep database backups,
+and serve HTTPS through your hosting platform or reverse proxy. Functions are trusted
+server code; review their permission checks before exposing them. Keep one app replica
+when using broadcast and presence. The supplied Compose defaults are for local development.
 
 ## Cost
 
@@ -123,10 +203,12 @@ point at it. **Connect with psql:** Postgres service → **Connect** → copy th
 |---|---|---|
 | Side project (mostly idle) | ~100MB RAM total, ~0 CPU | **$5/month** (inside the Hobby plan's included usage) |
 | Busy (20 req/s 24/7, 100 live sockets) | ~200MB RAM, ~0.4 vCPU | **~$11/month** |
-| Full self-hosted Supabase | Supabase recommends 4GB+ RAM, 2+ cores | $40+/month for the RAM alone |
 
-Measured, not guessed. [docs/cost.md](docs/cost.md) has the method and Railway's prices, and
-`bun run loadtest` reproduces the numbers.
+These are the project's recorded measurements and estimates, not a hosting quote.
+The Docker runtime has since changed from Alpine to Debian, so measure the current image
+before budgeting. Actual usage depends on workload, data, storage, and traffic.
+[docs/cost.md](docs/cost.md) has the measurement method and pricing assumptions;
+`bun run loadtest` lets you exercise your own deployment.
 
 ## Build your own app
 
@@ -258,8 +340,9 @@ npm run test:ui               # two browser users share a doc and edit it live
 node examples/smoke.mjs http://localhost:3001   # contract test for a framework example
 ```
 
-CI (`.github/workflows/ci.yml`) runs all of it on every pull request: a real `docker compose up --build`,
-the API and browser tests, and the smoke test against every framework example.
+CI (`.github/workflows/ci.yml`) runs the Docker stack, API tests, and browser tests on
+both x86-64 and ARM64 Linux on every pull request, plus
+the smoke test against every framework example.
 
 ## Troubleshooting
 
@@ -280,13 +363,13 @@ the API and browser tests, and the smoke test against every framework example.
 
 ## Why is Supabase heavy and this light?
 
-Self-hosted Supabase runs about 12 services in 5 languages: Kong, GoTrue, PostgREST, Realtime
-(Elixir), Storage + imgproxy, Edge Runtime (Deno), Studio (Next.js), postgres-meta, Logflare, Vector
-and Supavisor. Most of the memory goes to the dashboard, logging and Elixir services, not to the parts
-your app talks to.
+The full Supabase platform includes a dashboard, storage, an edge runtime, logging,
+connection pooling, and other services alongside Auth, REST, and realtime.
+Those features are useful, but they also expand what you need to deploy and operate.
+cheapabase focuses on a smaller set of app workflows and leaves those extra services out.
 
-cheapabase keeps the two Supabase pieces that are small and great (GoTrue and PostgREST, both static
-binaries) and replaces the rest with about 700 lines of TypeScript and SQL:
+cheapabase keeps GoTrue and PostgREST and implements the gateway, realtime, and functions
+in small TypeScript modules and SQL. Its smaller scope means fewer services to configure:
 
 | Supabase service | cheapabase |
 |---|---|

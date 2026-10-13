@@ -24,8 +24,12 @@ jobs:
       - run: bun run test
 
   e2e:
-    name: Docker build + end-to-end tests
-    runs-on: ubuntu-latest
+    name: Docker build + end-to-end tests (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -69,7 +73,7 @@ jobs:
           - name: laravel
             port: 3002
             install: composer install --no-interaction --no-progress && cp .env.example .env && php artisan key:generate --no-interaction
-            start: PHP_CLI_SERVER_WORKERS=4 php artisan serve --host=127.0.0.1 --port=3002
+            start: PHP_CLI_SERVER_WORKERS=4 php artisan serve --no-reload --host=127.0.0.1 --port=3002
           - name: fastapi
             port: 3003
             install: uv sync --frozen
@@ -130,7 +134,12 @@ jobs:
           npx playwright-core install --with-deps chromium
           node examples/smoke.mjs http://127.0.0.1:${{ matrix.port }}
 
-      - name: Logs
+      - name: Laravel collaboration (sharing, autosave, presence, permissions)
+        if: matrix.name == 'laravel'
+        working-directory: .
+        run: node test/ui/laravel-collaboration.mjs
+
+      - name: Collaboration failure logs
         if: failure()
         working-directory: .
         run: |

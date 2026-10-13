@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Services\Cheapabase;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\JsonResponse;
 use Illuminate\View\View;
 
 class DocController extends Controller
@@ -20,10 +21,11 @@ class DocController extends Controller
 
         return view('docs.index', [
             'user' => $user,
+            'cheapabaseUrl' => $this->cheapabase->url(),
             'hello' => $this->cheapabase->function('hello')->json('message'),
             // RLS only returns docs this user owns or was shared.
             'docs' => $this->cheapabase->rest()
-                ->get('/docs', ['select' => 'id,title', 'order' => 'updated_at.desc'])
+                ->get('/docs', ['select' => 'id,title,owner_id', 'order' => 'updated_at.desc'])
                 ->throw()
                 ->json(),
         ]);
@@ -50,16 +52,64 @@ class DocController extends Controller
         return view('docs.show', [
             'doc' => $doc,
             'cheapabaseUrl' => $this->cheapabase->url(),
-            'accessToken' => $this->cheapabase->accessToken(),
+            'user' => $this->cheapabase->user(),
+            'members' => $doc ? $this->cheapabase->rest()->get('/doc_members', [
+                'doc_id' => "eq.$id", 'select' => 'email',
+            ])->throw()->json() : [],
         ]);
     }
 
-    public function update(Request $request, string $id): RedirectResponse
+    public function update(Request $request, string $id): RedirectResponse|JsonResponse
     {
-        $this->cheapabase->rest()
-            ->patch("/docs?id=eq.$id", ['content' => (string) $request->input('content')])
-            ->throw();
+        $patch = $request->validate([
+            'content' => 'sometimes|nullable|string',
+            'title' => 'sometimes|required|string|max:500',
+        ]);
+        if (array_key_exists('content', $patch)) {
+            $patch['content'] = $patch['content'] ?? '';
+        }
+        $rows = $this->cheapabase->rest()->withHeaders(['Prefer' => 'return=representation'])
+            ->patch("/docs?id=eq.$id", $patch)->throw()->json();
+        abort_unless(count($rows), 404);
+
+        if ($request->expectsJson()) {
+            return response()->json($rows[0]);
+        }
 
         return redirect()->route('docs.show', $id)->with('status', 'Saved');
+    }
+
+    public function list(): JsonResponse
+    {
+        return response()->json($this->cheapabase->rest()->get('/docs', [
+            'select' => 'id,title,owner_id', 'order' => 'updated_at.desc',
+        ])->throw()->json());
+    }
+
+    public function realtimeSession(): JsonResponse
+    {
+        // Refresh in PHP; only the short-lived access token reaches the browser.
+        return response()->json(['accessToken' => $this->cheapabase->accessToken()])
+            ->header('Cache-Control', 'no-store');
+    }
+
+    public function share(Request $request, string $id): JsonResponse
+    {
+        $data = $request->validate(['email' => 'required|email']);
+        $response = $this->cheapabase->function('share-doc', 'POST', [
+            'doc_id' => $id, 'email' => $data['email'],
+        ]);
+
+        return response()->json($response->json(), $response->status());
+    }
+
+    public function destroy(string $id): JsonResponse
+    {
+        // Postgres enforces owner-only deletion. Returning rows detects hidden/no-op deletes.
+        $rows = $this->cheapabase->rest()->withHeaders(['Prefer' => 'return=representation'])
+            ->delete("/docs?id=eq.$id")->throw()->json();
+        abort_unless(count($rows), 404);
+
+        return response()->json(['ok' => true]);
     }
 }
